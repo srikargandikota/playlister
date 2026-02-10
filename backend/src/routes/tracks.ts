@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { query } from "../db/pool";
 import { listTags, createTag, addTagsToTrack, removeTagFromTrack } from "../services/tagService";
+import { getValidAccessToken, getUserLikedTracks } from "../services/spotifyService";
 
 export const tracksRouter = Router();
 
@@ -33,6 +34,62 @@ tracksRouter.get("/", async (req: AuthedRequest, res) => {
   );
 
   res.json({ items: rows });
+});
+
+// Trigger a simple sync of the user's liked tracks from Spotify into the local DB (first page, MVP).
+tracksRouter.post("/sync/liked", async (req: AuthedRequest, res) => {
+  const userId = req.userId as string;
+
+  try {
+    const accessToken = await getValidAccessToken(userId);
+    const data = (await getUserLikedTracks(accessToken, { limit: 50, offset: 0 })) as {
+      items: Array<{
+        track: {
+          id: string;
+          name: string;
+          artists: Array<{ name: string }>;
+          album: { name: string };
+          duration_ms: number;
+          explicit: boolean;
+        };
+      }>;
+    };
+
+    for (const item of data.items) {
+      const t = item.track;
+      const artists = t.artists.map((a) => a.name).join(", ");
+
+      const trackRows = await query<{
+        id: string;
+      }>(
+        "INSERT INTO tracks (spotify_track_id, name, artists, album, duration_ms, explicit) " +
+          "VALUES ($1, $2, $3, $4, $5, $6) " +
+          "ON CONFLICT (spotify_track_id) DO UPDATE SET " +
+          "name = EXCLUDED.name, " +
+          "artists = EXCLUDED.artists, " +
+          "album = EXCLUDED.album, " +
+          "duration_ms = EXCLUDED.duration_ms, " +
+          "explicit = EXCLUDED.explicit " +
+          "RETURNING id",
+        [t.id, t.name, artists, t.album?.name ?? null, t.duration_ms, t.explicit]
+      );
+
+      const trackId = trackRows[0].id;
+
+      await query(
+        "INSERT INTO user_tracks (user_id, track_id, liked) " +
+          "VALUES ($1, $2, TRUE) " +
+          "ON CONFLICT (user_id, track_id) DO UPDATE SET liked = TRUE",
+        [userId, trackId]
+      );
+    }
+
+    res.json({ synced: data.items.length });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("Sync liked tracks failed", err);
+    res.status(500).json({ error: "Sync liked tracks failed" });
+  }
 });
 
 // List tags for current user.

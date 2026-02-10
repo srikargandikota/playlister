@@ -104,3 +104,24 @@ export async function getUserLikedTracks(accessToken: string, options?: {
   return response.data;
 }
 
+export async function getValidAccessToken(userId: string): Promise<string> {
+  const rows = await query<SpotifyTokenRow>(
+    "SELECT * FROM spotify_tokens WHERE user_id = $1",
+    [userId]
+  );
+  const tokenRow = rows[0];
+  if (!tokenRow) {
+    throw new Error("No Spotify tokens stored for user");
+  }
+
+  const expiresAt = new Date(tokenRow.expires_at);
+  const now = new Date();
+
+  if (expiresAt.getTime() - now.getTime() > 60_000) {
+    return tokenRow.access_token;
+  }
+
+  return refreshAccessToken(userId);
+}
+
+
