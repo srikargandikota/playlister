@@ -13,11 +13,23 @@ export interface QueueItem {
 export async function buildQueue(userId: string, command: ParsedCommand): Promise<QueueItem[]> {
   const tagPlaceholders = command.tags.map((_, i) => `$${i + 2}`).join(", ");
 
-  // Simple AND/OR semantics based on number of matching tags.
-  const havingCondition =
-    command.matchMode === "AND"
-      ? "COUNT(DISTINCT tg.name) = $1"
-      : "COUNT(DISTINCT tg.name) >= 1";
+  // Build parameter list: $1 = userId, $2..$N = tag names, then optional HAVING param, then LIMIT param.
+  const params: unknown[] = [userId, ...command.tags];
+
+  let havingCondition: string;
+
+  if (command.matchMode === "AND") {
+    // For AND, require a match for all requested tags.
+    const havingParamIndex = params.length + 1;
+    havingCondition = `COUNT(DISTINCT tg.name) = $${havingParamIndex}`;
+    params.push(command.tags.length);
+  } else {
+    // For OR, at least one matching tag is enough; no extra param required.
+    havingCondition = "COUNT(DISTINCT tg.name) >= 1";
+  }
+
+  const limitParamIndex = params.length + 1;
+  params.push(command.limit);
 
   const sql =
     "SELECT t.id as track_id, t.spotify_track_id, t.name, t.artists, t.album, t.duration_ms " +
@@ -33,13 +45,7 @@ export async function buildQueue(userId: string, command: ParsedCommand): Promis
     havingCondition +
     " " +
     "ORDER BY random() " +
-    "LIMIT $3";
-
-  const params: unknown[] = [
-    userId,
-    ...command.tags,
-    command.matchMode === "AND" ? command.tags.length : command.limit,
-  ];
+    `LIMIT $${limitParamIndex}`;
 
   const rows = await query<{
     track_id: string;

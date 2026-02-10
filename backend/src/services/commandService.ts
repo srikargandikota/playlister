@@ -25,6 +25,10 @@ export function parseCommand(input: string): ParsedCommand {
     throw new Error("Command must start with 'play' or 'queue'");
   }
 
+  if (!second) {
+    throw new Error("At least one tag is required");
+  }
+
   if (second === "any") {
     matchMode = "OR";
     tags = rest;
