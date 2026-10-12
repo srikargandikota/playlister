@@ -1,4 +1,4 @@
-# 🎵 Playlister
+# Playlister
 
 **Tag your library once, and then just type what you are in the mood for.**
 
