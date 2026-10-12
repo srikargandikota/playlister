@@ -1,21 +1,19 @@
-# 🎵 Spotify Music Tagger
+# 🎵 Playlister
 
-**Tag your library once. Then just type what you're in the mood for.**
+**Tag your library once, and then just type what you are in the mood for.**
 
-A full-stack mobile app (React Native + Node/TypeScript + Postgres) that replaces static playlists with on-demand setlists built from your own tags.
+Playlister is a full-stack mobile app (React Native, Node/TypeScript, and Postgres) that replaces static playlists with on-demand setlists built from your own tags. I specced and built it with Claude Code and MCP tooling, and I designed the 4 core screens in Figma before writing any of the app.
 
 ## The problem
 
-Playlists rot. You make "study vibes" in September and by December it doesn't match how you actually listen. The real unit of curation isn't the playlist, it's the *tag*: `chill`, `hype`, `late-night`, `focus`. Spotify doesn't let you tag tracks, so this app does.
+Playlists go stale, because you make "study vibes" in September and by December it no longer matches how you actually listen. The real unit of curation is the tag rather than the playlist, like `chill`, `hype`, `late-night`, or `focus`, and Spotify does not let you tag tracks. So this app does.
 
-**The core interaction:** type a command like
+The core interaction is typing a command like the ones below and getting a freshly built queue every time.
 
 ```
 play chill study        → tracks tagged chill AND study
 queue any hype workout  → tracks tagged hype OR workout
 ```
-
-and get a freshly built queue every time.
 
 ## How it works
 
@@ -29,46 +27,46 @@ Node + Express + TypeScript API ──── Spotify Web API (OAuth PKCE)
 PostgreSQL (users, tracks, tags, track_tags)
 ```
 
-1. **Auth:** Spotify OAuth with PKCE; the backend exchanges the code, stores tokens, and issues its own JWT to the app.
-2. **Sync:** pulls your liked tracks into Postgres. Sync is idempotent: `ON CONFLICT` upserts mean repeat runs never duplicate your library, and token refresh is handled automatically when access tokens are within 60s of expiry.
-3. **Tag:** create tags (mood / genre / custom) and attach them to tracks from the mobile app.
-4. **Command → query:** a small grammar parser turns variable-length commands into a single parameterized SQL query. `AND` mode uses a `HAVING COUNT(DISTINCT tag) = n` aggregate; `OR` mode relaxes it. All user input is bound as parameters, so there is no string-built SQL.
+1. **Auth.** Spotify OAuth runs with PKCE, and the backend exchanges the code, stores the tokens, and issues its own JWT to the app.
+2. **Sync.** The backend pulls your liked tracks into Postgres, and the sync is idempotent because `ON CONFLICT` upserts make sure repeat runs never duplicate your library. Token refresh happens automatically once an access token is within 60 seconds of expiring.
+3. **Tag.** You create tags (mood, genre, or custom) and attach them to tracks from the mobile app.
+4. **Command to query.** A small grammar parser turns variable-length commands into a single parameterized SQL query, where `AND` mode uses a `HAVING COUNT(DISTINCT tag) = n` aggregate and `OR` mode relaxes it. All user input is bound as parameters, so there is no string-built SQL anywhere.
 
 ## Product decisions worth noting
 
-- **Commands over UI filters.** Typing `play chill study` is faster than tapping through filter menus, and it maps to how people describe music to themselves.
-- **Tags are per-user, tracks are global.** Track metadata is deduplicated across users; tagging is personal. This keeps the schema clean and sync cheap.
-- **MVP honesty.** The parser has a fixed result limit and sync fetches the first page. Both are marked as MVP in code with a clear path to pagination and richer grammar (durations, counts).
+- **Commands over UI filters.** Typing `play chill study` is faster than tapping through filter menus, and it maps to how people already describe music to themselves.
+- **Tags are per user, and tracks are global.** Track metadata is deduplicated across users while tagging stays personal, which keeps the schema clean and the sync cheap.
+- **MVP honesty.** The parser has a fixed result limit and sync fetches only the first page. Both are marked as MVP in the code with a clear path to pagination and a richer grammar (durations and counts).
 
 ## Project structure
 
-- [`backend/`](backend/): Express API for auth, sync, tagging, and command → queue building
-- [`mobile/`](mobile/): Expo app with auth, library, track detail, command, and player screens
+- [`backend/`](backend/) holds the Express API for auth, sync, tagging, and command to queue building.
+- [`mobile/`](mobile/) holds the Expo app with auth, library, track detail, command, and player screens.
 
 ## Running it locally
 
 <details>
 <summary>Backend setup</summary>
 
-1. **Start Postgres** with `docker compose up -d db`
-2. **Configure env:** copy `backend/.env.example` to `backend/.env` and set `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REDIRECT_URI`, `JWT_SECRET`, `DATABASE_URL`
-3. **Install + migrate:** `cd backend && npm install && npm run db:migrate`
-4. **Run:** `npm run dev`, then check `http://localhost:3000/health`
+1. Start Postgres with `docker compose up -d db`.
+2. Copy `backend/.env.example` to `backend/.env` and set `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REDIRECT_URI`, `JWT_SECRET`, and `DATABASE_URL`.
+3. Install and migrate with `cd backend && npm install && npm run db:migrate`.
+4. Run `npm run dev`, then check `http://localhost:3000/health`.
 
 </details>
 
 <details>
 <summary>Mobile setup</summary>
 
-1. `cd mobile && npm install`
-2. Set `EXPO_PUBLIC_API_BASE_URL` to your backend (e.g. `http://localhost:3000`)
-3. `npm start` and open in an iOS/Android emulator or device
+1. Run `cd mobile && npm install`.
+2. Set `EXPO_PUBLIC_API_BASE_URL` to your backend, such as `http://localhost:3000`.
+3. Run `npm start` and open the app in an iOS or Android emulator or on a device.
 
 </details>
 
 ## Roadmap
 
-- [ ] Full-library sync with pagination (currently first page)
-- [ ] Spotify mobile SDK playback in `PlayerScreen` (queue building works; in-app playback is next)
-- [ ] Richer command grammar: `play chill for 45 minutes`, `queue 20 hype`
+- [ ] Full-library sync with pagination (currently the first page only)
+- [ ] Spotify mobile SDK playback in `PlayerScreen`, because queue building works and in-app playback is next
+- [ ] A richer command grammar, such as `play chill for 45 minutes` or `queue 20 hype`
 - [ ] Smart tag suggestions from audio features
