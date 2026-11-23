@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { authRouter } from "./routes/auth";
 import { tracksRouter } from "./routes/tracks";
 import { commandsRouter } from "./routes/commands";
+import { recommendationsRouter } from "./routes/recommendations";
 
 dotenv.config();
 
@@ -18,6 +19,7 @@ app.get("/health", (_req, res) => {
 app.use("/auth", authRouter);
 app.use("/tracks", tracksRouter);
 app.use("/commands", commandsRouter);
+app.use("/recommendations", recommendationsRouter);
 
 const PORT = process.env.PORT || 3000;
 
