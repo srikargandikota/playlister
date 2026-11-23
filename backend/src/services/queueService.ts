@@ -14,18 +14,18 @@ export async function buildQueue(userId: string, command: ParsedCommand): Promis
   const tagPlaceholders = command.tags.map((_, i) => `$${i + 2}`).join(", ");
 
   // Build parameter list: $1 = userId, $2..$N = tag names, then optional HAVING param, then LIMIT param.
-  const params: unknown[] = [userId, ...command.tags];
+  const params: unknown[] = [userId, ...command.tags.map((t) => t.toLowerCase())];
 
   let havingCondition: string;
 
   if (command.matchMode === "AND") {
     // For AND, require a match for all requested tags.
     const havingParamIndex = params.length + 1;
-    havingCondition = `COUNT(DISTINCT tg.name) = $${havingParamIndex}`;
+    havingCondition = `COUNT(DISTINCT lower(tg.name)) = $${havingParamIndex}`;
     params.push(command.tags.length);
   } else {
     // For OR, at least one matching tag is enough; no extra param required.
-    havingCondition = "COUNT(DISTINCT tg.name) >= 1";
+    havingCondition = "COUNT(DISTINCT lower(tg.name)) >= 1";
   }
 
   const limitParamIndex = params.length + 1;
@@ -37,7 +37,7 @@ export async function buildQueue(userId: string, command: ParsedCommand): Promis
     "JOIN tracks t ON ut.track_id = t.id " +
     "JOIN track_tags tt ON tt.track_id = t.id AND tt.user_id = ut.user_id " +
     "JOIN tags tg ON tg.id = tt.tag_id " +
-    "WHERE ut.user_id = $1 AND tg.name IN (" +
+    "WHERE ut.user_id = $1 AND lower(tg.name) IN (" +
     tagPlaceholders +
     ") " +
     "GROUP BY t.id " +
@@ -56,7 +56,7 @@ export async function buildQueue(userId: string, command: ParsedCommand): Promis
     duration_ms: number;
   }>(sql, params);
 
-  return rows.map((r) => ({
+  const items = rows.map((r) => ({
     trackId: r.track_id,
     spotifyTrackId: r.spotify_track_id,
     name: r.name,
@@ -64,5 +64,20 @@ export async function buildQueue(userId: string, command: ParsedCommand): Promis
     album: r.album,
     durationMs: r.duration_ms,
   }));
+  return command.maxDurationMs ? trimToDuration(items, command.maxDurationMs) : items;
+}
+
+// Keep tracks in order until the next one would exceed the cap. Tracks that do not fit
+// are skipped rather than ending the queue, so a long song early on does not waste the budget.
+export function trimToDuration<T extends { durationMs: number }>(items: T[], maxDurationMs: number): T[] {
+  const out: T[] = [];
+  let total = 0;
+  for (const item of items) {
+    if (total + item.durationMs <= maxDurationMs) {
+      out.push(item);
+      total += item.durationMs;
+    }
+  }
+  return out;
 }
 

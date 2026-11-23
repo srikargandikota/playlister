@@ -88,22 +88,6 @@ export async function getSpotifyProfile(accessToken: string): Promise<unknown> {
   return response.data;
 }
 
-export async function getUserLikedTracks(accessToken: string, options?: {
-  limit?: number;
-  offset?: number;
-}): Promise<unknown> {
-  const response = await axios.get(`${SPOTIFY_API_BASE_URL}/me/tracks`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-    params: {
-      limit: options?.limit ?? 50,
-      offset: options?.offset ?? 0,
-    },
-  });
-  return response.data;
-}
-
 export async function getValidAccessToken(userId: string): Promise<string> {
   const rows = await query<SpotifyTokenRow>(
     "SELECT * FROM spotify_tokens WHERE user_id = $1",

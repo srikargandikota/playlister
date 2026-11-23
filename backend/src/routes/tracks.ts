@@ -2,7 +2,11 @@ import { Router } from "express";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { query } from "../db/pool";
 import { listTags, createTag, addTagsToTrack, removeTagFromTrack } from "../services/tagService";
-import { getValidAccessToken, getUserLikedTracks } from "../services/spotifyService";
+import { getValidAccessToken } from "../services/spotifyService";
+import { fetchAllLikedTracks, upsertLibrary } from "../services/librarySync";
+import { fetchAudioFeatures, saveFeatures, tracksMissingFeatures } from "../services/featureService";
+import { applyAutoTags, loadClassifiableTracks } from "../services/autoTagService";
+import { classifyTonality } from "../services/tonality";
 
 export const tracksRouter = Router();
 
@@ -36,61 +40,60 @@ tracksRouter.get("/", async (req: AuthedRequest, res) => {
   res.json({ items: rows });
 });
 
-// Trigger a simple sync of the user's liked tracks from Spotify into the local DB (first page, MVP).
+// Sync the user's entire saved library (every page) from Spotify, then classify tonality
+// for any tracks without features and apply auto tags. Pass ?classify=false to skip classification.
 tracksRouter.post("/sync/liked", async (req: AuthedRequest, res) => {
   const userId = req.userId as string;
+  const classify = req.query.classify !== "false";
 
   try {
     const accessToken = await getValidAccessToken(userId);
-    const data = (await getUserLikedTracks(accessToken, { limit: 50, offset: 0 })) as {
-      items: Array<{
-        track: {
-          id: string;
-          name: string;
-          artists: Array<{ name: string }>;
-          album: { name: string };
-          duration_ms: number;
-          explicit: boolean;
-        };
-      }>;
-    };
-
-    for (const item of data.items) {
-      const t = item.track;
-      const artists = t.artists.map((a) => a.name).join(", ");
-
-      const trackRows = await query<{
-        id: string;
-      }>(
-        "INSERT INTO tracks (spotify_track_id, name, artists, album, duration_ms, explicit) " +
-          "VALUES ($1, $2, $3, $4, $5, $6) " +
-          "ON CONFLICT (spotify_track_id) DO UPDATE SET " +
-          "name = EXCLUDED.name, " +
-          "artists = EXCLUDED.artists, " +
-          "album = EXCLUDED.album, " +
-          "duration_ms = EXCLUDED.duration_ms, " +
-          "explicit = EXCLUDED.explicit " +
-          "RETURNING id",
-        [t.id, t.name, artists, t.album?.name ?? null, t.duration_ms, t.explicit]
-      );
-
-      const trackId = trackRows[0].id;
-
-      await query(
-        "INSERT INTO user_tracks (user_id, track_id, liked) " +
-          "VALUES ($1, $2, TRUE) " +
-          "ON CONFLICT (user_id, track_id) DO UPDATE SET liked = TRUE",
-        [userId, trackId]
-      );
-    }
-
-    res.json({ synced: data.items.length });
+    const tracks = await fetchAllLikedTracks(accessToken);
+    const synced = await upsertLibrary(userId, tracks);
+    const classification = classify ? await classifyLibrary(userId) : null;
+    res.json({ synced, classification });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("Sync liked tracks failed", err);
     res.status(500).json({ error: "Sync liked tracks failed" });
   }
 });
+
+// Classify tonality (key, mode, energy, mood) for tracks that do not have features yet,
+// then attach auto tags. Safe to rerun; already classified tracks are skipped.
+tracksRouter.post("/classify", async (req: AuthedRequest, res) => {
+  const userId = req.userId as string;
+  try {
+    res.json(await classifyLibrary(userId));
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("Classification failed", err);
+    res.status(500).json({ error: "Classification failed" });
+  }
+});
+
+// Tonality details for one track.
+tracksRouter.get("/:trackId/tonality", async (req: AuthedRequest, res) => {
+  const userId = req.userId as string;
+  const library = await loadClassifiableTracks(userId);
+  const t = library.find((x) => x.trackId === req.params.trackId);
+  if (!t) return res.status(404).json({ error: "No features for this track yet" });
+  res.json({ trackId: t.trackId, features: t.features, ...classifyTonality(t.features) });
+});
+
+async function classifyLibrary(userId: string) {
+  const missing = await tracksMissingFeatures(userId);
+  const features = await fetchAudioFeatures(missing);
+  const featuresSaved = await saveFeatures(features);
+  const tagged = await applyAutoTags(userId);
+  return {
+    requested: missing.length,
+    featuresSaved,
+    noFeaturesAvailable: missing.length - featuresSaved,
+    classifiedTracks: tagged.tracks,
+    newTagLinks: tagged.tagLinks,
+  };
+}
 
 // List tags for current user.
 tracksRouter.get("/tags", async (req: AuthedRequest, res) => {

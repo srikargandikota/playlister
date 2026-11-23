@@ -6,6 +6,7 @@ export interface ParsedCommand {
   tags: string[];
   matchMode: "AND" | "OR";
   limit: number;
+  maxDurationMs?: number;
 }
 
 export interface CommandResponse {
@@ -19,6 +20,8 @@ export interface CommandResponse {
     durationMs: number;
   }>;
   uris: string[];
+  interpreter?: "llm" | "rules";
+  droppedTags?: string[];
 }
 
 export async function runCommand(token: string, input: string) {
@@ -30,3 +33,13 @@ export async function runCommand(token: string, input: string) {
   });
 }
 
+
+// Free text requests, e.g. "something mellow in a minor key for 30 minutes".
+export async function askCommand(token: string, input: string) {
+  return apiRequest<CommandResponse>({
+    path: "/commands/ask",
+    method: "POST",
+    body: { input },
+    token
+  });
+}
