@@ -56,3 +56,21 @@ CREATE TABLE IF NOT EXISTS track_tags (
   UNIQUE (user_id, track_id, tag_id)
 );
 
+
+-- Audio features per track (shared across users), used for tonality classification
+-- and recommendations. key: 0-11 pitch class (C = 0), -1 when undetected. mode: 1 major, 0 minor.
+CREATE TABLE IF NOT EXISTS track_features (
+  track_id UUID PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  key SMALLINT,
+  mode SMALLINT,
+  tempo NUMERIC,
+  energy NUMERIC,
+  valence NUMERIC,
+  danceability NUMERIC,
+  acousticness NUMERIC,
+  source TEXT NOT NULL,
+  fetched_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_tracks_user ON user_tracks (user_id);
+CREATE INDEX IF NOT EXISTS idx_track_tags_user_tag ON track_tags (user_id, tag_id);
