@@ -61,3 +61,19 @@ export async function removeTagFromTrack(token: string, trackId: string, tagId: 
   });
 }
 
+
+export interface SyncResult {
+  synced: number;
+  classification: {
+    requested: number;
+    featuresSaved: number;
+    noFeaturesAvailable: number;
+    classifiedTracks: number;
+    newTagLinks: number;
+  } | null;
+}
+
+// Pulls the full Spotify library, then classifies tonality and applies auto tags.
+export async function syncLibrary(token: string) {
+  return apiRequest<SyncResult>({ path: "/tracks/sync/liked", method: "POST", token });
+}

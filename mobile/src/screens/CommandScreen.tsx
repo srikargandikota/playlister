@@ -2,16 +2,16 @@ import React, { useState } from "react";
 import { View, Text, TextInput, Button, StyleSheet, FlatList } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
-import { runCommand } from "@api/commands";
+import { askCommand, runCommand } from "@api/commands";
+import { getToken } from "@api/session";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Command">;
 
-// TODO: Replace with real auth state (context/secure storage).
-const TEMP_TOKEN = "";
 
 export const CommandScreen: React.FC<Props> = ({ navigation }) => {
   const [input, setInput] = useState("play chill");
   const [error, setError] = useState<string | null>(null);
+  const [interpreted, setInterpreted] = useState<string | null>(null);
   const [uris, setUris] = useState<string[]>([]);
   const [tracks, setTracks] = useState<
     Array<{ name: string; artists: string; spotifyTrackId: string }>
@@ -20,7 +20,10 @@ export const CommandScreen: React.FC<Props> = ({ navigation }) => {
   const handleRun = async () => {
     try {
       setError(null);
-      const res = await runCommand(TEMP_TOKEN, input);
+      // Typed grammar ("play chill study") goes to /run; anything else is free text for /ask.
+      const isGrammar = /^\s*(play|queue)\b/i.test(input) && !/[,.?]/.test(input);
+      const res = isGrammar ? await runCommand(getToken(), input) : await askCommand(getToken(), input);
+      setInterpreted(isGrammar ? null : `Matched: ${res.command.tags.join(res.command.matchMode === "OR" ? " or " : " + ")}`);
       setUris(res.uris);
       setTracks(res.queue.map((q) => ({ name: q.name, artists: q.artists, spotifyTrackId: q.spotifyTrackId })));
     } catch (err) {
@@ -40,10 +43,11 @@ export const CommandScreen: React.FC<Props> = ({ navigation }) => {
         style={styles.input}
         value={input}
         onChangeText={setInput}
-        placeholder="e.g., play chill study"
+        placeholder="play chill study, or: something mellow in a minor key"
         placeholderTextColor="#666"
       />
       {error && <Text style={styles.error}>{error}</Text>}
+      {interpreted && <Text style={styles.resultSubtitle}>{interpreted}</Text>}
       <Button title="Run" onPress={handleRun} />
 
       <Text style={styles.label}>Results</Text>

@@ -1,33 +1,49 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Button } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
-import { fetchTracks, Track } from "@api/tracks";
+import { fetchTracks, syncLibrary, Track } from "@api/tracks";
+import { getToken } from "@api/session";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Library">;
 
-// TODO: Replace with real auth state (context/secure storage).
-const TEMP_TOKEN = "";
 
 export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      const res = await fetchTracks(getToken());
+      setTracks(res.items);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const res = await fetchTracks(TEMP_TOKEN);
-        setTracks(res.items);
-      } catch (err) {
-        setError((err as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    };
     load();
   }, []);
+
+  const handleSync = async () => {
+    try {
+      setSyncStatus("Syncing and classifying...");
+      const res = await syncLibrary(getToken());
+      const c = res.classification;
+      setSyncStatus(
+        `Synced ${res.synced} tracks` + (c ? `, classified ${c.featuresSaved} new (${c.noFeaturesAvailable} unavailable)` : "")
+      );
+      await load();
+    } catch (err) {
+      setSyncStatus((err as Error).message);
+    }
+  };
 
   if (loading) {
     return (
@@ -47,6 +63,8 @@ export const LibraryScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      <Button title="Sync and classify library" onPress={handleSync} />
+      {syncStatus && <Text style={styles.status}>{syncStatus}</Text>}
       <FlatList
         data={tracks}
         keyExtractor={(item) => item.track_id}
@@ -96,6 +114,12 @@ const styles = StyleSheet.create({
   },
   error: {
     color: "red"
+  },
+  status: {
+    color: "#aaa",
+    fontSize: 13,
+    paddingHorizontal: 16,
+    paddingBottom: 8
   }
 });
 
