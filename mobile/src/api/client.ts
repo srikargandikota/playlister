@@ -27,6 +27,10 @@ export async function apiRequest<T = unknown>(options: ApiOptions): Promise<T> {
     throw new Error(`API error ${res.status}: ${text}`);
   }
 
+  // 204 No Content (tag add/remove) has no body to parse.
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return (await res.json()) as T;
 }
 

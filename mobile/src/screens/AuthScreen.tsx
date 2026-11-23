@@ -6,6 +6,7 @@ import * as Crypto from "expo-crypto";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import { getSpotifyLoginUrl, exchangeCodeForToken } from "@api/auth";
+import { setToken } from "@api/session";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Auth">;
 
@@ -21,7 +22,7 @@ export const AuthScreen: React.FC<Props> = ({ navigation }) => {
       setError(null);
 
       const redirectUri = AuthSession.makeRedirectUri();
-      const codeVerifier = AuthSession.generateRandom(64);
+      const codeVerifier = randomVerifier(64);
 
       // PKCE: code_challenge = BASE64URL-ENCODE(SHA256(code_verifier))
       const base64Digest = await Crypto.digestStringAsync(
@@ -50,8 +51,7 @@ export const AuthScreen: React.FC<Props> = ({ navigation }) => {
 
       const { token } = await exchangeCodeForToken(code, codeVerifier);
 
-      // In a real app, persist this token (e.g., context + secure storage).
-      // For now, just navigate and pass it via params.
+      setToken(token);
       navigation.reset({
         index: 0,
         routes: [{ name: "Library", params: undefined as never }]
@@ -97,3 +97,13 @@ const styles = StyleSheet.create({
   }
 });
 
+
+// PKCE code verifier: 43 to 128 unreserved URL characters (RFC 7636). The alphabet has
+// exactly 64 characters so each random byte maps without modulo bias.
+const VERIFIER_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+function randomVerifier(length: number): string {
+  const bytes = Crypto.getRandomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i++) out += VERIFIER_CHARS[bytes[i] % VERIFIER_CHARS.length];
+  return out;
+}
